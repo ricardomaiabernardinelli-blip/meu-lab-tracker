@@ -1284,57 +1284,49 @@ function ImportView({ db, patientId, onImport }) {
     return steps.map(p => p.id === id ? { ...p, status, ...(sub ? { sub } : {}) } : p);
   }
 
-  async function handleFile(file) {
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      setError('Por favor, selecione um arquivo PDF válido.');
-      return;
-    }
+// Substitua a lógica de processamento de arquivo por esta:
+async function handleFile(file) {
+  if (!file) return;
+  
+  // Se for CSV, processa localmente sem usar a API do Claude
+  if (file.name.endsWith('.csv')) {
     setFileName(file.name);
     setStep('processing');
-    setError(''); setErrorDetail('');
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const lines = text.split('\n').filter(l => l.trim());
+      
+      const csvResults = lines.slice(1).map((line, i) => {
+        const cols = line.split(',').map(c => c.replace(/"/g, '').trim());
+        const canonical = normalizeExamName(cols[1] || ""); // Usa sua função original
+        const info = getExamInfo(canonical); // Usa seu catálogo original
+        
+        return {
+          _id: Date.now() + i,
+          examName: canonical,
+          value: parseFloat(cols[2]) || 0,
+          unit: cols[3] || info.unit || "",
+          date: cols[4] || new Date().toISOString().split('T')[0],
+          category: info.category || 'other',
+          refMin: cols[5] ? parseFloat(cols[5]) : info.refMin,
+          refMax: cols[6] ? parseFloat(cols[6]) : info.refMax,
+          keep: true,
+        };
+      }).filter(e => e.value > 0);
 
-    const steps = [
-      { id: 1, text: 'Lendo arquivo PDF', sub: file.name, status: 'active' },
-      { id: 2, text: 'Enviando para análise', sub: 'Transferindo para o Claude...', status: 'pending' },
-      { id: 3, text: 'Extraindo exames com IA', sub: 'Claude está lendo o laudo...', status: 'pending' },
-      { id: 4, text: 'Normalizando dados', sub: 'Padronizando nomes e categorias...', status: 'pending' },
-    ];
-    setProcessing(steps);
-
-    let base64 = '';
-    try {
-      base64 = await fileToBase64(file);
-    } catch (e) {
-      setProcessing(prev => updateStep(prev, 1, 'error', 'Falha ao ler o arquivo'));
-      setError('Não foi possível ler o arquivo. Tente novamente.');
-      setStep('upload');
-      return;
-    }
-
-    setProcessing(prev => updateStep(updateStep(prev, 1, 'done'), 2, 'active'));
-    await new Promise(r => setTimeout(r, 300));
-
-    let rawExams = [];
-    try {
-      setProcessing(prev => updateStep(updateStep(prev, 2, 'done'), 3, 'active', 'Claude está analisando o PDF...'));
-      rawExams = await extractExamsFromPDFWithClaude(base64);
-    } catch (e) {
-      setProcessing(prev => updateStep(prev, 3, 'error', e.message));
-      setError('Erro na extração automática via IA.');
-      setErrorDetail(e.message);
-      // Still go to review with empty list so user can add manually
-      setExtracted([]);
-      setStep('review');
-      return;
-    }
-
-    setProcessing(prev => updateStep(updateStep(prev, 3, 'done'), 4, 'active'));
-    await new Promise(r => setTimeout(r, 300));
-
-    finishProcessing(rawExams);
+      setExtracted(csvResults);
+      setStep('review'); // Abre a tela de revisão original do sistema
+    };
+    reader.readAsText(file);
+    return;
   }
 
+  // Se for PDF, o sistema original tentava usar a API (isso continuará falhando sem a chave)
+  setError('Para PDFs, utilize a função de "Colar Texto" ou use um arquivo .csv');
+}
+ 
   async function handleTextSubmit() {
     if (!manualText.trim()) return;
     setStep('processing');
