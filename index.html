@@ -1369,29 +1369,39 @@ function ImportView({ db, patientId, onImport }) {
     finishProcessing(rawExams);
   }
 
-  function parseTextFallback(text) {
-    // Enhanced regex fallback — handles common Brazilian lab report formats
-    const results = [];
-    const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
-    lines.forEach(line => {
-      // Pattern: "Exam name: value unit  ref_range"
-      // Pattern: "Exam name   value   unit   min - max"
-      // Pattern: "Exam name   value,decimal unit"
-      const p1 = line.match(/^([A-Za-záéíóúãõâêôàçÁÉÍÓÚÃÕÂÊÔÀÇ][A-Za-záéíóúãõâêôàçÁÉÍÓÚÃÕÂÊÔÀÇ\s\-\/()]+?)\s*[:\s]\s*(\d+[,.]?\d*)\s*([a-zA-Z/%µ³·]+)?\s*(?:(\d+[,.]?\d*)\s*[-–a]\s*(\d+[,.]?\d*))?/);
-      if (p1) {
-        const name = p1[1].trim();
-        const value = parseFloat(p1[2].replace(',', '.'));
-        const unit = p1[3] || '';
-        const refMin = p1[4] ? parseFloat(p1[4].replace(',', '.')) : null;
-        const refMax = p1[5] ? parseFloat(p1[5].replace(',', '.')) : null;
-        if (name.length >= 3 && value > 0 && name.length < 60) {
-          results.push({ examName: name, value, unit, date: examDate, refMin, refMax });
-        }
-      }
-    });
-    return results;
-  }
+function parseTextFallback(text) {
+  const results = [];
+  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+  
+  // Regex aprimorada para capturar Nome, Valor e Unidade em uma única linha
+  // Ex: "GLICOSE 95 mg/dL" ou "CREATININA 1.2 mg/dL"
+  const regexLinha = /([A-ZÁÉÍÓÚÃÕÂÊÔÇ\s\-\/]{3,})\s+([\d,.]+)\s+([a-zA-Z/%µ³·]+)?/;
 
+  lines.forEach(line => {
+    const match = line.match(regexLinha);
+    if (match) {
+      const rawName = match[1].trim();
+      const canonical = normalizeExamName(rawName); // Normaliza para o catálogo
+      const valueStr = match[2].replace(',', '.');
+      const value = parseFloat(valueStr);
+      const unit = match[3] || "";
+
+      // Só adiciona se o valor for um número válido e o nome for reconhecido
+      if (!isNaN(value) && value > 0) {
+        results.push({
+          exam_id: Date.now() + Math.random(),
+          examName: canonical,
+          value: value,
+          unit: unit,
+          date: examDate, // Usa a data que você selecionou no calendário da tela
+          keep: true
+        });
+      }
+    }
+  });
+  return results;
+}
+ 
   function finishProcessing(rawExams) {
     const normalized = rawExams.map((e, i) => {
       const canonical = normalizeExamName(String(e.examName || ''));
